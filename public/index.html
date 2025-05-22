@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Assistant</title>
+    <title>OpenAI Realtime Voice Assistant</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -20,7 +20,7 @@
             justify-content: center;
             color: white;
         }
-
+        
         .container {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
@@ -31,13 +31,13 @@
             width: 90%;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
         }
-
+        
         h1 {
             margin-bottom: 2rem;
             font-size: 2rem;
             font-weight: 300;
         }
-
+        
         .mic-button {
             width: 120px;
             height: 120px;
@@ -54,18 +54,29 @@
             justify-content: center;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         }
-
+        
+        .mic-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+        
         .mic-button.listening {
             background: linear-gradient(135deg, #26de81, #20bf6b);
             animation: pulse 1.5s infinite;
         }
-
+        
+        .mic-button.disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
         @keyframes pulse {
             0% { transform: scale(1); }
             50% { transform: scale(1.1); }
             100% { transform: scale(1); }
         }
-
+        
         .status {
             margin: 1rem 0;
             padding: 0.5rem;
@@ -73,7 +84,7 @@
             background: rgba(255, 255, 255, 0.1);
             font-size: 0.9rem;
         }
-
+        
         .transcript {
             margin: 1rem 0;
             padding: 1rem;
@@ -84,14 +95,19 @@
             font-size: 0.9rem;
             line-height: 1.4;
         }
-
+        
+        .transcript h3 {
+            margin-bottom: 0.5rem;
+            color: #ffd700;
+        }
+        
         .controls {
             display: flex;
             gap: 1rem;
             justify-content: center;
             margin-top: 1rem;
         }
-
+        
         .btn {
             padding: 0.5rem 1rem;
             border: none;
@@ -101,96 +117,588 @@
             cursor: pointer;
             transition: background 0.3s ease;
         }
-
+        
         .btn:hover {
             background: rgba(255, 255, 255, 0.3);
         }
+        
+        .btn:disabled {
+            background: rgba(255, 255, 255, 0.1);
+            cursor: not-allowed;
+        }
+        
+        .volume-indicator {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            margin: 1rem 0;
+            overflow: hidden;
+        }
+        
+        .volume-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #26de81, #ffd700, #ff6b6b);
+            width: 0%;
+            transition: width 0.1s ease;
+        }
 
+        .permission-status {
+            margin: 1rem 0;
+            padding: 0.5rem;
+            border-radius: 10px;
+            font-size: 0.8rem;
+        }
+
+        .permission-granted {
+            background: rgba(38, 222, 129, 0.2);
+            color: #26de81;
+        }
+
+        .permission-denied {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+
+        .permission-prompt {
+            background: rgba(255, 215, 0, 0.2);
+            color: #ffd700;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎤 Voice Assistant</h1>
         
-        <button id="micButton" class="mic-button">
+        <button id="micButton" class="mic-button disabled">
             <span id="micIcon">🎤</span>
         </button>
         
-        <div id="status" class="status">Click the microphone to start talking...</div>
-
-        <div id="transcript" class="transcript"></div>
-
+        <div id="status" class="status">Connecting...</div>
+        <div id="permissionStatus" class="permission-status permission-prompt">Microphone permission not checked</div>
+        
+        <div class="volume-indicator">
+            <div id="volumeBar" class="volume-bar"></div>
+        </div>
+        
+        <div id="transcript" class="transcript">
+            <h3>Conversation</h3>
+            <div id="transcriptContent">Click the microphone to start talking...</div>
+        </div>
+        
+        <div class="controls">
+            <button id="connectBtn" class="btn">Connect</button>
+            <button id="clearBtn" class="btn" disabled>Clear</button>
+            <button id="testMicBtn" class="btn">Test Microphone</button>
+        </div>
     </div>
 
     <script>
-        class VoiceAssistant {
+        class RealtimeVoiceAssistant {
             constructor() {
-                this.isListening = false;
+                this.ws = null;
                 this.mediaRecorder = null;
-                this.stream = null;
-                this.micButton = document.getElementById('micButton');
-                this.status = document.getElementById('status');
-                this.transcriptDiv = document.getElementById('transcript');
-                this.micIcon = document.getElementById('micIcon');
+                this.audioContext = null;
+                this.analyser = null;
+                this.isConnected = false;
+                this.isListening = false;
+                this.transcriptContent = [];
+                this.microphonePermission = 'prompt'; // 'granted', 'denied', 'prompt'
+                this.currentStream = null;
                 
+                this.micButton = document.getElementById('micButton');
+                this.micIcon = document.getElementById('micIcon');
+                this.status = document.getElementById('status');
+                this.permissionStatus = document.getElementById('permissionStatus');
+                this.transcriptDiv = document.getElementById('transcriptContent');
+                this.connectBtn = document.getElementById('connectBtn');
+                this.clearBtn = document.getElementById('clearBtn');
+                this.testMicBtn = document.getElementById('testMicBtn');
+                this.volumeBar = document.getElementById('volumeBar');
+                
+                this.initializeEventListeners();
+                this.checkInitialPermissions();
+            }
+            
+            initializeEventListeners() {
                 this.micButton.addEventListener('click', () => this.toggleListening());
+                this.connectBtn.addEventListener('click', () => this.connect());
+                this.clearBtn.addEventListener('click', () => this.clearTranscript());
+                this.testMicBtn.addEventListener('click', () => this.testMicrophone());
             }
 
+            async checkInitialPermissions() {
+                try {
+                    // Check if Permissions API is available
+                    if ('permissions' in navigator) {
+                        const permission = await navigator.permissions.query({ name: 'microphone' });
+                        this.handlePermissionChange(permission.state);
+                        
+                        // Listen for permission changes
+                        permission.addEventListener('change', () => {
+                            this.handlePermissionChange(permission.state);
+                        });
+                    } else {
+                        // Fallback for browsers without Permissions API
+                        this.updatePermissionStatus('prompt', 'Permissions API not available - will request on use');
+                    }
+                } catch (error) {
+                    console.warn('Could not check microphone permissions:', error);
+                    this.updatePermissionStatus('prompt', 'Permission check failed - will request on use');
+                }
+            }
+
+            handlePermissionChange(state) {
+                this.microphonePermission = state;
+                switch (state) {
+                    case 'granted':
+                        this.updatePermissionStatus('granted', 'Microphone access granted ✓');
+                        break;
+                    case 'denied':
+                        this.updatePermissionStatus('denied', 'Microphone access denied - please enable in browser settings');
+                        break;
+                    case 'prompt':
+                        this.updatePermissionStatus('prompt', 'Microphone permission will be requested');
+                        break;
+                }
+            }
+
+            updatePermissionStatus(type, message) {
+                this.permissionStatus.className = `permission-status permission-${type}`;
+                this.permissionStatus.textContent = message;
+            }
+
+            async testMicrophone() {
+                try {
+                    this.updateStatus('Testing microphone...');
+                    
+                    // Request microphone access
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            sampleRate: 24000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }
+                    });
+
+                    // Test successful
+                    this.updatePermissionStatus('granted', 'Microphone test successful ✓');
+                    this.updateStatus('Microphone test passed - ready to use!');
+                    
+                    // Stop the test stream
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    // Update microphone permission state
+                    this.microphonePermission = 'granted';
+                    
+                } catch (error) {
+                    console.error('Microphone test failed:', error);
+                    this.handleMicrophoneError(error);
+                }
+            }
+
+            handleMicrophoneError(error) {
+                let message = 'Microphone access failed: ';
+                let suggestion = '';
+
+                switch (error.name) {
+                    case 'NotAllowedError':
+                        message += 'Permission denied';
+                        suggestion = 'Please click the microphone icon in your browser\'s address bar and allow access, then refresh the page.';
+                        this.updatePermissionStatus('denied', 'Permission denied - check browser settings');
+                        break;
+                    case 'NotFoundError':
+                        message += 'No microphone found';
+                        suggestion = 'Please ensure a microphone is connected to your device.';
+                        break;
+                    case 'NotReadableError':
+                        message += 'Microphone is being used by another application';
+                        suggestion = 'Please close other applications that might be using the microphone.';
+                        break;
+                    case 'OverconstrainedError':
+                        message += 'Microphone constraints not supported';
+                        suggestion = 'Your microphone may not support the required audio format.';
+                        break;
+                    case 'SecurityError':
+                        message += 'Security error';
+                        suggestion = 'Please ensure you\'re using HTTPS or localhost.';
+                        break;
+                    default:
+                        message += error.message || 'Unknown error';
+                        suggestion = 'Please try refreshing the page or check your microphone settings.';
+                }
+
+                this.updateStatus(`${message}. ${suggestion}`);
+            }
+            
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}`;
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('Connected to server');
+                    this.updateStatus('Connected to server. Initializing...');
+                    this.ws.send(JSON.stringify({ type: 'connect' }));
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    this.handleServerMessage(data);
+                };
+                
+                this.ws.onclose = () => {
+                    console.log('Disconnected from server');
+                    this.updateStatus('Disconnected');
+                    this.isConnected = false;
+                    this.micButton.classList.add('disabled');
+                    this.connectBtn.disabled = false;
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateStatus('Connection error');
+                };
+            }
+            
+            handleServerMessage(data) {
+                switch (data.type) {
+                    case 'connected':
+                        this.isConnected = true;
+                        this.updateStatus('Ready! Click the microphone to start.');
+                        this.micButton.classList.remove('disabled');
+                        this.clearBtn.disabled = false;
+                        this.connectBtn.disabled = true;
+                        break;
+                        
+                    case 'conversation.item.input_audio_transcription.completed':
+                        if (data.transcript) {
+                            this.addToTranscript('You', data.transcript);
+                        }
+                        break;
+                        
+                    case 'response.audio_transcript.delta':
+                        this.updateAssistantResponse(data.delta);
+                        break;
+                        
+                    case 'response.audio_transcript.done':
+                        this.finalizeAssistantResponse(data.transcript);
+                        break;
+                        
+                    case 'response.audio.delta':
+                        if (data.delta) {
+                            this.playAudioDelta(data.delta);
+                        }
+                        break;
+                        
+                    case 'input_audio_buffer.speech_started':
+                        this.updateStatus('Listening... (speech detected)');
+                        break;
+                        
+                    case 'input_audio_buffer.speech_stopped':
+                        this.updateStatus('Processing...');
+                        break;
+                        
+                    case 'error':
+                        console.error('Server error:', data.message);
+                        this.updateStatus(`Error: ${data.message}`);
+                        break;
+                        
+                    case 'disconnected':
+                        this.updateStatus('OpenAI connection lost');
+                        this.isConnected = false;
+                        break;
+                }
+            }
+            
             async toggleListening() {
+                if (!this.isConnected) {
+                    this.updateStatus('Please connect to the server first');
+                    return;
+                }
+                
                 if (this.isListening) {
                     this.stopListening();
                 } else {
                     await this.startListening();
                 }
             }
-
+            
             async startListening() {
                 try {
-                    // Request microphone access
-                    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    // Clean up any existing stream
+                    if (this.currentStream) {
+                        this.currentStream.getTracks().forEach(track => track.stop());
+                        this.currentStream = null;
+                    }
 
-                    // Setup media recorder
-                    this.mediaRecorder = new MediaRecorder(this.stream);
+                    this.updateStatus('Requesting microphone access...');
+                    
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            sampleRate: 24000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }
+                    });
+                    
+                    this.currentStream = stream;
+                    this.microphonePermission = 'granted';
+                    this.updatePermissionStatus('granted', 'Microphone access granted ✓');
+                    
+                    // Close any existing audio context
+                    if (this.audioContext && this.audioContext.state !== 'closed') {
+                        await this.audioContext.close();
+                    }
+                    
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+                    
+                    // Handle audio context state
+                    if (this.audioContext.state === 'suspended') {
+                        await this.audioContext.resume();
+                    }
+                    
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 256;
+                    
+                    const source = this.audioContext.createMediaStreamSource(stream);
+                    source.connect(this.analyser);
+                    
+                    this.setupVolumeIndicator();
+                    
+                    // Check for MediaRecorder support
+                    if (!window.MediaRecorder) {
+                        throw new Error('MediaRecorder not supported');
+                    }
+                    
+                    // Try different MIME types
+                    let mimeType;
+                    const possibleTypes = [
+                        'audio/webm;codecs=opus',
+                        'audio/webm',
+                        'audio/mp4',
+                        'audio/wav'
+                    ];
+                    
+                    for (const type of possibleTypes) {
+                        if (MediaRecorder.isTypeSupported(type)) {
+                            mimeType = type;
+                            break;
+                        }
+                    }
+                    
+                    if (!mimeType) {
+                        throw new Error('No supported audio format found');
+                    }
+                    
+                    this.mediaRecorder = new MediaRecorder(stream, { mimeType });
+                    
                     this.mediaRecorder.ondataavailable = (event) => {
-                        // We can process audio here and send it to server
-                        const audioData = event.data;
-                        console.log('Audio data available', audioData);
+                        if (event.data.size > 0 && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            this.convertAndSendAudio(event.data);
+                        }
                     };
-
-                    // Start recording audio in chunks
-                    this.mediaRecorder.start(100);  // Recording in 100ms chunks
+                    
+                    this.mediaRecorder.onerror = (event) => {
+                        console.error('MediaRecorder error:', event.error);
+                        this.updateStatus('Recording error: ' + event.error.message);
+                        this.stopListening();
+                    };
+                    
+                    this.mediaRecorder.start(100); // Send audio in 100ms chunks
+                    
                     this.isListening = true;
-
                     this.micButton.classList.add('listening');
                     this.micIcon.textContent = '🔴';
                     this.updateStatus('Listening... Speak now!');
                     
                 } catch (error) {
-                    console.error('Microphone error: ', error);
-                    this.updateStatus('Microphone access denied. Please check permissions.');
+                    console.error('Error starting listening:', error);
+                    this.handleMicrophoneError(error);
+                    this.stopListening();
                 }
             }
-
+            
             stopListening() {
-                if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-                    this.mediaRecorder.stop();
-                    this.stream.getTracks().forEach(track => track.stop());
+                try {
+                    if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                        this.mediaRecorder.stop();
+                    }
+                    
+                    if (this.currentStream) {
+                        this.currentStream.getTracks().forEach(track => track.stop());
+                        this.currentStream = null;
+                    }
+                    
+                    if (this.audioContext && this.audioContext.state !== 'closed') {
+                        this.audioContext.close();
+                    }
+                    
+                    this.isListening = false;
+                    this.micButton.classList.remove('listening');
+                    this.micIcon.textContent = '🎤';
+                    this.updateStatus('Stopped listening');
+                    this.volumeBar.style.width = '0%';
+                } catch (error) {
+                    console.error('Error stopping listening:', error);
                 }
-
-                this.isListening = false;
-                this.micButton.classList.remove('listening');
-                this.micIcon.textContent = '🎤';
-                this.updateStatus('Stopped listening.');
             }
-
+            
+            setupVolumeIndicator() {
+                const updateVolume = () => {
+                    if (!this.analyser || !this.isListening) return;
+                    
+                    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+                    this.analyser.getByteFrequencyData(dataArray);
+                    
+                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                    const percentage = Math.min(100, (average / 255) * 100);
+                    
+                    this.volumeBar.style.width = `${percentage}%`;
+                    
+                    if (this.isListening) {
+                        requestAnimationFrame(updateVolume);
+                    }
+                };
+                
+                updateVolume();
+            }
+            
+            async convertAndSendAudio(blob) {
+                try {
+                    const arrayBuffer = await blob.arrayBuffer();
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    
+                    // Convert to PCM16
+                    const pcm16 = this.convertToPCM16(audioBuffer);
+                    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcm16)));
+                    
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({
+                            type: 'input_audio_buffer.append',
+                            audio: base64Audio
+                        }));
+                    }
+                    
+                    audioContext.close();
+                } catch (error) {
+                    console.error('Error converting audio:', error);
+                }
+            }
+            
+            convertToPCM16(audioBuffer) {
+                const length = audioBuffer.length;
+                const result = new Int16Array(length);
+                const channelData = audioBuffer.getChannelData(0);
+                
+                for (let i = 0; i < length; i++) {
+                    const sample = Math.max(-1, Math.min(1, channelData[i]));
+                    result[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                }
+                
+                return result.buffer;
+            }
+            
+            playAudioDelta(deltaBase64) {
+                try {
+                    const audioData = atob(deltaBase64);
+                    const audioArray = new Uint8Array(audioData.length);
+                    for (let i = 0; i < audioData.length; i++) {
+                        audioArray[i] = audioData.charCodeAt(i);
+                    }
+                    
+                    // Convert PCM16 to AudioBuffer and play
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const audioBuffer = audioContext.createBuffer(1, audioArray.length / 2, 24000);
+                    const channelData = audioBuffer.getChannelData(0);
+                    
+                    for (let i = 0; i < channelData.length; i++) {
+                        const sample = (audioArray[i * 2] | (audioArray[i * 2 + 1] << 8));
+                        channelData[i] = sample < 0x8000 ? sample / 0x8000 : (sample - 0x10000) / 0x8000;
+                    }
+                    
+                    const source = audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(audioContext.destination);
+                    source.start();
+                    
+                } catch (error) {
+                    console.error('Error playing audio:', error);
+                }
+            }
+            
+            addToTranscript(speaker, text) {
+                this.transcriptContent.push({ speaker, text, timestamp: new Date() });
+                this.updateTranscriptDisplay();
+            }
+            
+            updateAssistantResponse(delta) {
+                if (this.transcriptContent.length > 0) {
+                    const lastItem = this.transcriptContent[this.transcriptContent.length - 1];
+                    if (lastItem.speaker === 'Assistant' && !lastItem.final) {
+                        lastItem.text += delta;
+                    } else {
+                        this.transcriptContent.push({ 
+                            speaker: 'Assistant', 
+                            text: delta, 
+                            timestamp: new Date(),
+                            final: false 
+                        });
+                    }
+                } else {
+                    this.transcriptContent.push({ 
+                        speaker: 'Assistant', 
+                        text: delta, 
+                        timestamp: new Date(),
+                        final: false 
+                    });
+                }
+                this.updateTranscriptDisplay();
+            }
+            
+            finalizeAssistantResponse(fullText) {
+                if (this.transcriptContent.length > 0) {
+                    const lastItem = this.transcriptContent[this.transcriptContent.length - 1];
+                    if (lastItem.speaker === 'Assistant') {
+                        lastItem.text = fullText;
+                        lastItem.final = true;
+                    }
+                }
+                this.updateTranscriptDisplay();
+            }
+            
+            updateTranscriptDisplay() {
+                const content = this.transcriptContent.map(item => {
+                    const time = item.timestamp.toLocaleTimeString();
+                    return `<div style="margin-bottom: 10px;">
+                        <strong style="color: ${item.speaker === 'You' ? '#ffd700' : '#26de81'};">
+                            ${item.speaker} (${time}):
+                        </strong><br>
+                        ${item.text}
+                    </div>`;
+                }).join('');
+                
+                this.transcriptDiv.innerHTML = content || 'Click the microphone to start talking...';
+                this.transcriptDiv.scrollTop = this.transcriptDiv.scrollHeight;
+            }
+            
+            clearTranscript() {
+                this.transcriptContent = [];
+                this.updateTranscriptDisplay();
+            }
+            
             updateStatus(message) {
                 this.status.textContent = message;
             }
         }
-
+        
         // Initialize the voice assistant when the page loads
         document.addEventListener('DOMContentLoaded', () => {
-            new VoiceAssistant();
+            new RealtimeVoiceAssistant();
         });
     </script>
 </body>
