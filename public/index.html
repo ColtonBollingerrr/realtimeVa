@@ -179,6 +179,8 @@
                 this.currentStream = null;
                 this.isConnected = false;
                 this.isListening = false;
+                this.isSessionReady = false; // Track if session is fully ready
+                this.audioBuffer = []; // Buffer audio until session is ready
                 this.transcriptContent = [];
                 
                 this.micButton = document.getElementById('micButton');
@@ -219,6 +221,8 @@
                     console.log('Disconnected from server');
                     this.updateStatus('Disconnected from server');
                     this.isConnected = false;
+                    this.isSessionReady = false;
+                    this.audioBuffer = [];
                     this.micButton.classList.add('disabled');
                     this.connectBtn.disabled = false;
                     this.clearBtn.disabled = true;
@@ -243,19 +247,6 @@
                         this.micButton.classList.remove('disabled');
                         this.clearBtn.disabled = false;
                         this.connectBtn.disabled = true;
-                        
-                        // Send a test message to keep connection active
-                        console.log('Connection established, sending test message');
-                        if (this.ws.readyState === WebSocket.OPEN) {
-                            // Send a simple message to test the connection
-                            this.ws.send(JSON.stringify({
-                                type: 'response.create',
-                                response: {
-                                    modalities: ['text'],
-                                    instructions: 'Say "Hello! I am ready to help you." briefly.'
-                                }
-                            }));
-                        }
                         break;
                         
                     case 'conversation.item.input_audio_transcription.completed':
@@ -352,11 +343,19 @@
                         // Convert to base64
                         const base64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
                         
-                        // Send to OpenAI Realtime API
-                        this.ws.send(JSON.stringify({
-                            type: 'input_audio_buffer.append',
-                            audio: base64
-                        }));
+                        // Buffer audio until session is ready, then send immediately
+                        if (this.isSessionReady) {
+                            this.ws.send(JSON.stringify({
+                                type: 'input_audio_buffer.append',
+                                audio: base64
+                            }));
+                        } else {
+                            // Buffer the audio until session is ready
+                            this.audioBuffer.push(base64);
+                            if (this.audioBuffer.length > 50) { // Limit buffer size
+                                this.audioBuffer.shift(); // Remove oldest chunk
+                            }
+                        }
                     };
                     
                     // Wire up the audio processing chain
