@@ -24,6 +24,7 @@ wss.on('connection', (ws) => {
   console.log('Client connected');
   
   let openaiWs = null;
+  let pingInterval = null;
   
   // Connect to OpenAI Realtime API
   const connectToOpenAI = () => {
@@ -52,6 +53,15 @@ wss.on('connection', (ws) => {
     openaiWs.on('open', () => {
       console.log('Connected to OpenAI Realtime API');
       
+      // Set up ping interval to keep connection alive
+      pingInterval = setInterval(() => {
+        if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+          // Send a ping message to keep connection alive
+          openaiWs.ping();
+          console.log('Sent ping to OpenAI');
+        }
+      }, 30000); // Ping every 30 seconds
+      
       // Configure the session
       const sessionConfig = {
         type: 'session.update',
@@ -78,6 +88,10 @@ wss.on('connection', (ws) => {
       
       // Notify client that connection is ready
       ws.send(JSON.stringify({ type: 'connected' }));
+    });
+
+    openaiWs.on('pong', () => {
+      console.log('Received pong from OpenAI');
     });
 
     openaiWs.on('message', (data) => {
@@ -149,6 +163,12 @@ wss.on('connection', (ws) => {
       console.log('Close code:', code);
       console.log('Close reason:', reason ? reason.toString() : 'No reason provided');
       
+      // Clear ping interval
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+      }
+      
       let closeMessage = 'OpenAI connection closed';
       if (code === 1000) closeMessage = 'Normal closure';
       else if (code === 1006) closeMessage = 'Connection lost unexpectedly';
@@ -184,6 +204,10 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     console.log('Client disconnected');
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
     if (openaiWs) {
       openaiWs.close();
     }
