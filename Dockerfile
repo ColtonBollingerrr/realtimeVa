@@ -1,23 +1,29 @@
-# Use the official Node.js runtime as the base image
-FROM node:18-slim
+# Use Node.js 18 Alpine for smaller image size
+FROM node:18-alpine
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json (if available)
+# Install system dependencies
+RUN apk add --no-cache python3 make g++
+
+# Copy package files
 COPY package*.json ./
 
-# Install dependenciaes
+# Install dependencies
 RUN npm ci --only=production
 
-# Copy the rest of the application code
+# Copy application code
 COPY . .
 
-# Create the public directory if it doesn't exist
-RUN mkdir -p public
+# Create uploads directory for temporary audio files
+RUN mkdir -p uploads
 
-# Expose the port the app runs on
+# Expose port
 EXPOSE 8080
 
-# Define the command to run the application
+# Set environment variables
+ENV NODE_ENV=production
+
+# Start the application
 CMD ["npm", "start"]
