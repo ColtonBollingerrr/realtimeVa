@@ -1,4 +1,15 @@
-# Real-time Voice Assistant
+# AI Voice Assistant with Knowledge Base
+
+A dockerized real-time voice assistant powered by OpenAI's GPT-4o real-time API with Supabase vector store integration. This application provides contextual responses by searching through your company's knowledge base in real-time during voice conversations.
+
+## Features
+
+- 🎤 Real-time voice recording and playback
+- 🧠 **Contextual AI responses using vector search**
+- 🔊 Live audio visualization during recording
+- 💬 Real-time transcription of conversations
+- 📚 **Intelligent knowledge base integration**
+- 🎛️ Configurable voice selection (6 OpenAI voices)# Real-time Voice Assistant
 
 A dockerized real-time voice assistant powered by OpenAI's GPT-4o real-time API. This application provides a web-based interface for voice conversations with AI, featuring real-time audio processing and WebSocket connections.
 
