@@ -1,4 +1,3 @@
-
 const express = require('express');
 const WebSocket = require('ws');
 const http = require('http');
@@ -35,7 +34,13 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    // Log API key info (without exposing the key)
+    console.log('API Key present:', !!apiKey);
+    console.log('API Key length:', apiKey.length);
+    console.log('API Key starts with sk-:', apiKey.startsWith('sk-'));
+
     const url = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01`;
+    console.log('Connecting to OpenAI:', url);
     
     openaiWs = new WebSocket(url, {
       headers: {
@@ -68,6 +73,7 @@ wss.on('connection', (ws) => {
         }
       };
       
+      console.log('Sending session config:', JSON.stringify(sessionConfig, null, 2));
       openaiWs.send(JSON.stringify(sessionConfig));
       
       // Notify client that connection is ready
@@ -77,6 +83,12 @@ wss.on('connection', (ws) => {
     openaiWs.on('message', (data) => {
       try {
         const message = JSON.parse(data.toString());
+        console.log('Received from OpenAI:', message.type, message.error ? `ERROR: ${JSON.stringify(message.error)}` : '');
+        
+        // Log errors in detail
+        if (message.type === 'error') {
+          console.error('OpenAI API Error:', JSON.stringify(message, null, 2));
+        }
         
         // Forward relevant messages to client
         switch (message.type) {
@@ -111,21 +123,46 @@ wss.on('connection', (ws) => {
             break;
           
           default:
-            console.log('Unhandled message type:', message.type);
+            console.log('Unhandled message type:', message.type, JSON.stringify(message, null, 2));
         }
       } catch (error) {
         console.error('Error parsing OpenAI message:', error);
+        console.error('Raw message:', data.toString());
       }
     });
 
     openaiWs.on('error', (error) => {
       console.error('OpenAI WebSocket error:', error);
-      ws.send(JSON.stringify({ type: 'error', message: 'OpenAI connection error' }));
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        type: error.type
+      });
+      ws.send(JSON.stringify({ 
+        type: 'error', 
+        message: `OpenAI connection error: ${error.message}` 
+      }));
     });
 
-    openaiWs.on('close', () => {
+    openaiWs.on('close', (code, reason) => {
       console.log('OpenAI WebSocket closed');
-      ws.send(JSON.stringify({ type: 'disconnected' }));
+      console.log('Close code:', code);
+      console.log('Close reason:', reason ? reason.toString() : 'No reason provided');
+      
+      let closeMessage = 'OpenAI connection closed';
+      if (code === 1000) closeMessage = 'Normal closure';
+      else if (code === 1006) closeMessage = 'Connection lost unexpectedly';
+      else if (code === 4001) closeMessage = 'Invalid API key';
+      else if (code === 4003) closeMessage = 'Rate limit exceeded';
+      else if (code === 4004) closeMessage = 'Model not available';
+      else if (code >= 4000) closeMessage = `OpenAI API error (${code})`;
+      
+      ws.send(JSON.stringify({ 
+        type: 'disconnected',
+        code: code,
+        message: closeMessage,
+        reason: reason ? reason.toString() : undefined
+      }));
     });
   };
 
