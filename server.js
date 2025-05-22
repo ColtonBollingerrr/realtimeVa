@@ -134,7 +134,7 @@ async function startOpenAISession(connectionId, config) {
                 type: 'session.update',
                 session: {
                     modalities: ['text', 'audio'],
-                    instructions: config?.instructions || 'You are a helpful voice assistant. Respond naturally and conversationally.',
+                    instructions: config?.instructions || 'You are a helpful voice assistant. Respond naturally and conversationally. Always provide audio responses.',
                     voice: config?.voice || 'alloy',
                     input_audio_format: 'pcm16',
                     output_audio_format: 'pcm16',
@@ -145,7 +145,7 @@ async function startOpenAISession(connectionId, config) {
                         type: 'server_vad',
                         threshold: 0.5,
                         prefix_padding_ms: 300,
-                        silence_duration_ms: 200
+                        silence_duration_ms: 500
                     },
                     tools: [],
                     tool_choice: 'auto',
