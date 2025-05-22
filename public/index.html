@@ -474,18 +474,21 @@
                         throw new Error('MediaRecorder not supported');
                     }
                     
-                    // Try different MIME types
+                    // Try different MIME types with preference for PCM/WAV
                     let mimeType;
                     const possibleTypes = [
+                        'audio/wav',
+                        'audio/webm;codecs=pcm',
                         'audio/webm;codecs=opus',
                         'audio/webm',
                         'audio/mp4',
-                        'audio/wav'
+                        'audio/ogg;codecs=opus'
                     ];
                     
                     for (const type of possibleTypes) {
                         if (MediaRecorder.isTypeSupported(type)) {
                             mimeType = type;
+                            console.log('Using MIME type:', mimeType);
                             break;
                         }
                     }
@@ -498,7 +501,10 @@
                     
                     this.mediaRecorder.ondataavailable = (event) => {
                         if (event.data.size > 0 && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                            this.convertAndSendAudio(event.data);
+                            // Add a small delay to ensure data is complete
+                            setTimeout(() => {
+                                this.convertAndSendAudio(event.data);
+                            }, 10);
                         }
                     };
                     
@@ -508,7 +514,7 @@
                         this.stopListening();
                     };
                     
-                    this.mediaRecorder.start(100); // Send audio in 100ms chunks
+                    this.mediaRecorder.start(250); // Increased interval to 250ms for more stable chunks
                     
                     this.isListening = true;
                     this.micButton.classList.add('listening');
@@ -569,13 +575,69 @@
             
             async convertAndSendAudio(blob) {
                 try {
+                    // Skip if blob is too small (likely empty or corrupted)
+                    if (blob.size < 100) {
+                        return;
+                    }
+
                     const arrayBuffer = await blob.arrayBuffer();
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                     
-                    // Convert to PCM16
-                    const pcm16 = this.convertToPCM16(audioBuffer);
-                    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcm16)));
+                    // Check if arrayBuffer has data
+                    if (arrayBuffer.byteLength === 0) {
+                        console.warn('Empty audio buffer received');
+                        return;
+                    }
+
+                    // Create a new AudioContext for each conversion to avoid conflicts
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ 
+                        sampleRate: 24000 
+                    });
+                    
+                    try {
+                        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice());
+                        
+                        // Convert to PCM16
+                        const pcm16 = this.convertToPCM16(audioBuffer);
+                        const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcm16)));
+                        
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            this.ws.send(JSON.stringify({
+                                type: 'input_audio_buffer.append',
+                                audio: base64Audio
+                            }));
+                        }
+                    } catch (decodeError) {
+                        // If decoding fails, try alternative approach with raw audio processing
+                        console.warn('Audio decode failed, trying alternative method:', decodeError);
+                        await this.handleRawAudioData(arrayBuffer);
+                    } finally {
+                        // Always close the context
+                        if (audioContext.state !== 'closed') {
+                            await audioContext.close();
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error('Error converting audio:', error);
+                    // Don't stop the recording process for individual conversion errors
+                }
+            }
+
+            async handleRawAudioData(arrayBuffer) {
+                try {
+                    // For WebM/Opus, we might need to extract raw audio differently
+                    // This is a simplified approach - in production you might want to use a library
+                    const view = new DataView(arrayBuffer);
+                    const samples = new Int16Array(arrayBuffer.byteLength / 2);
+                    
+                    // Simple conversion assuming 16-bit PCM (this is a fallback)
+                    for (let i = 0; i < samples.length; i++) {
+                        if (i * 2 + 1 < arrayBuffer.byteLength) {
+                            samples[i] = view.getInt16(i * 2, true); // little-endian
+                        }
+                    }
+                    
+                    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(samples.buffer)));
                     
                     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                         this.ws.send(JSON.stringify({
@@ -583,10 +645,8 @@
                             audio: base64Audio
                         }));
                     }
-                    
-                    audioContext.close();
                 } catch (error) {
-                    console.error('Error converting audio:', error);
+                    console.error('Raw audio processing failed:', error);
                 }
             }
             
