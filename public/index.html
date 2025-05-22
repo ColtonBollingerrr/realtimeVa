@@ -217,10 +217,16 @@
                 
                 this.ws.onclose = () => {
                     console.log('Disconnected from server');
-                    this.updateStatus('Disconnected');
+                    this.updateStatus('Disconnected from server');
                     this.isConnected = false;
                     this.micButton.classList.add('disabled');
                     this.connectBtn.disabled = false;
+                    this.clearBtn.disabled = true;
+                    
+                    // Stop listening if we were
+                    if (this.isListening) {
+                        this.stopListening();
+                    }
                 };
                 
                 this.ws.onerror = (error) => {
@@ -237,6 +243,19 @@
                         this.micButton.classList.remove('disabled');
                         this.clearBtn.disabled = false;
                         this.connectBtn.disabled = true;
+                        
+                        // Send a test message to keep connection active
+                        console.log('Connection established, sending test message');
+                        if (this.ws.readyState === WebSocket.OPEN) {
+                            // Send a simple message to test the connection
+                            this.ws.send(JSON.stringify({
+                                type: 'response.create',
+                                response: {
+                                    modalities: ['text'],
+                                    instructions: 'Say "Hello! I am ready to help you." briefly.'
+                                }
+                            }));
+                        }
                         break;
                         
                     case 'conversation.item.input_audio_transcription.completed':
