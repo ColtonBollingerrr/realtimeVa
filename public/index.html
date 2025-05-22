@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real-time Voice Assistant</title>
+    <title>AI Voice Assistant with Knowledge Base</title>
     <style>
         * {
             margin: 0;
@@ -26,15 +26,21 @@
             border-radius: 20px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
             padding: 2rem;
-            max-width: 500px;
+            max-width: 600px;
             width: 90%;
             text-align: center;
         }
 
         h1 {
             color: #667eea;
-            margin-bottom: 2rem;
+            margin-bottom: 0.5rem;
             font-size: 2rem;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
         }
 
         .status {
@@ -42,6 +48,10 @@
             padding: 1rem;
             border-radius: 10px;
             font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
         }
 
         .status.disconnected {
@@ -60,6 +70,30 @@
             background-color: #e8f5e8;
             color: #2d5a2d;
             border: 1px solid #c3e6c3;
+        }
+
+        .config-status {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin: 1rem 0;
+            font-size: 0.85rem;
+        }
+
+        .config-item {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .config-item.ok {
+            background: #e8f5e8;
+            color: #2d5a2d;
+        }
+
+        .config-item.error {
+            background: #fee;
+            color: #c33;
         }
 
         .voice-button {
@@ -142,25 +176,196 @@
             border-radius: 10px;
             min-height: 100px;
             text-align: left;
-            max-height: 200px;
+            max-height: 250px;
             overflow-y: auto;
         }
 
         .transcript h3 {
             margin-bottom: 1rem;
             color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
 
         .transcript-item {
             margin: 0.5rem 0;
-            padding: 0.5rem;
-            border-radius: 5px;
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            line-height: 1.4;
         }
 
         .transcript-item.user {
             background: #e3f2fd;
             border-left: 3px solid #2196f3;
         }
+
+        .transcript-item.assistant {
+            background: #f3e5f5;
+            border-left: 3px solid #9c27b0;
+        }
+
+        .transcript-item .speaker {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .audio-visualizer {
+            width: 100%;
+            height: 60px;
+            margin: 1rem 0;
+            background: #f0f0f0;
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .audio-bar {
+            position: absolute;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(to top, #667eea, #764ba2);
+            border-radius: 2px;
+            transition: height 0.1s ease;
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            border: 1px solid #ffcdd2;
+        }
+
+        .context-indicator {
+            background: #e8f5e8;
+            color: #2d5a2d;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            margin: 0.5rem 0;
+            display: inline-block;
+        }
+
+        .help-text {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .keyboard-hint {
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 0.5rem;
+        }
+
+        .stats-display {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin: 1rem 0;
+            font-size: 0.8rem;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 0.5rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            min-width: 80px;
+        }
+
+        .stat-number {
+            font-weight: bold;
+            color: #667eea;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 AI Voice Assistant</h1>
+        <p class="subtitle">Powered by knowledge base with contextual responses</p>
+        
+        <div id="status" class="status disconnected">
+            <span>⚫</span> Disconnected
+        </div>
+
+        <div class="config-status" id="configStatus">
+            <div class="config-item" id="apiStatus">⏳ Checking API...</div>
+            <div class="config-item" id="vectorStatus">⏳ Checking Vector Store...</div>
+        </div>
+
+        <div class="stats-display" id="statsDisplay" style="display: none;">
+            <div class="stat-item">
+                <span class="stat-number" id="docCount">-</span>
+                <span>Documents</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="projectTypes">-</span>
+                <span>Project Types</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="serviceTypes">-</span>
+                <span>Service Types</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <label for="voice-select">Voice:</label>
+            <select id="voice-select">
+                <option value="alloy">Alloy (Neutral)</option>
+                <option value="echo">Echo (Clear)</option>
+                <option value="fable">Fable (Expressive)</option>
+                <option value="onyx">Onyx (Deep)</option>
+                <option value="nova">Nova (Energetic)</option>
+                <option value="shimmer">Shimmer (Calm)</option>
+            </select>
+
+            <label for="instructions">Additional Instructions:</label>
+            <textarea id="instructions" placeholder="Any specific instructions for the assistant...">You are a knowledgeable assistant representing our company. Use information from our knowledge base to provide detailed, accurate responses about our services, capabilities, and expertise.</textarea>
+        </div>
+
+        <button id="connectBtn" class="voice-button">
+            Connect
+        </button>
+
+        <button id="voiceBtn" class="voice-button" disabled>
+            Hold to Talk
+        </button>
+        
+        <div class="keyboard-hint">💡 Tip: Hold Spacebar to talk when connected</div>
+
+        <div class="audio-visualizer" id="visualizer" style="display: none;">
+            <!-- Audio bars will be generated here -->
+        </div>
+
+        <div id="contextIndicator" style="display: none;"></div>
+
+        <div id="error-container"></div>
+
+        <div class="transcript" id="transcript">
+            <h3>🗣️ Conversation</h3>
+            <div id="transcript-content">
+                <div class="help-text">
+                    <strong>How it works:</strong><br>
+                    1. Click "Connect" to start the AI assistant<br>
+                    2. Hold the "Hold to Talk" button and speak your question<br>
+                    3. The assistant will search our knowledge base and provide contextual responses<br>
+                    4. Ask about our services, projects, technologies, or capabilities
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
 
         .transcript-item.assistant {
             background: #f3e5f5;
