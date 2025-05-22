@@ -142,28 +142,6 @@
             width: 0%;
             transition: width 0.1s ease;
         }
-
-        .permission-status {
-            margin: 1rem 0;
-            padding: 0.5rem;
-            border-radius: 10px;
-            font-size: 0.8rem;
-        }
-
-        .permission-granted {
-            background: rgba(38, 222, 129, 0.2);
-            color: #26de81;
-        }
-
-        .permission-denied {
-            background: rgba(255, 107, 107, 0.2);
-            color: #ff6b6b;
-        }
-
-        .permission-prompt {
-            background: rgba(255, 215, 0, 0.2);
-            color: #ffd700;
-        }
     </style>
 </head>
 <body>
@@ -175,7 +153,6 @@
         </button>
         
         <div id="status" class="status">Connecting...</div>
-        <div id="permissionStatus" class="permission-status permission-prompt">Microphone permission not checked</div>
         
         <div class="volume-indicator">
             <div id="volumeBar" class="volume-bar"></div>
@@ -189,7 +166,6 @@
         <div class="controls">
             <button id="connectBtn" class="btn">Connect</button>
             <button id="clearBtn" class="btn" disabled>Clear</button>
-            <button id="testMicBtn" class="btn">Test Microphone</button>
         </div>
     </div>
 
@@ -200,137 +176,26 @@
                 this.audioContext = null;
                 this.analyser = null;
                 this.processor = null;
-                this.sourceNode = null;
+                this.currentStream = null;
                 this.isConnected = false;
                 this.isListening = false;
                 this.transcriptContent = [];
-                this.microphonePermission = 'prompt'; // 'granted', 'denied', 'prompt'
-                this.currentStream = null;
                 
                 this.micButton = document.getElementById('micButton');
                 this.micIcon = document.getElementById('micIcon');
                 this.status = document.getElementById('status');
-                this.permissionStatus = document.getElementById('permissionStatus');
                 this.transcriptDiv = document.getElementById('transcriptContent');
                 this.connectBtn = document.getElementById('connectBtn');
                 this.clearBtn = document.getElementById('clearBtn');
-                this.testMicBtn = document.getElementById('testMicBtn');
                 this.volumeBar = document.getElementById('volumeBar');
                 
                 this.initializeEventListeners();
-                this.checkInitialPermissions();
             }
             
             initializeEventListeners() {
                 this.micButton.addEventListener('click', () => this.toggleListening());
                 this.connectBtn.addEventListener('click', () => this.connect());
                 this.clearBtn.addEventListener('click', () => this.clearTranscript());
-                this.testMicBtn.addEventListener('click', () => this.testMicrophone());
-            }
-
-            async checkInitialPermissions() {
-                try {
-                    // Check if Permissions API is available
-                    if ('permissions' in navigator) {
-                        const permission = await navigator.permissions.query({ name: 'microphone' });
-                        this.handlePermissionChange(permission.state);
-                        
-                        // Listen for permission changes
-                        permission.addEventListener('change', () => {
-                            this.handlePermissionChange(permission.state);
-                        });
-                    } else {
-                        // Fallback for browsers without Permissions API
-                        this.updatePermissionStatus('prompt', 'Permissions API not available - will request on use');
-                    }
-                } catch (error) {
-                    console.warn('Could not check microphone permissions:', error);
-                    this.updatePermissionStatus('prompt', 'Permission check failed - will request on use');
-                }
-            }
-
-            handlePermissionChange(state) {
-                this.microphonePermission = state;
-                switch (state) {
-                    case 'granted':
-                        this.updatePermissionStatus('granted', 'Microphone access granted ✓');
-                        break;
-                    case 'denied':
-                        this.updatePermissionStatus('denied', 'Microphone access denied - please enable in browser settings');
-                        break;
-                    case 'prompt':
-                        this.updatePermissionStatus('prompt', 'Microphone permission will be requested');
-                        break;
-                }
-            }
-
-            updatePermissionStatus(type, message) {
-                this.permissionStatus.className = `permission-status permission-${type}`;
-                this.permissionStatus.textContent = message;
-            }
-
-            async testMicrophone() {
-                try {
-                    this.updateStatus('Testing microphone...');
-                    
-                    // Request microphone access
-                    const stream = await navigator.mediaDevices.getUserMedia({ 
-                        audio: {
-                            sampleRate: 24000,
-                            channelCount: 1,
-                            echoCancellation: true,
-                            noiseSuppression: true
-                        }
-                    });
-
-                    // Test successful
-                    this.updatePermissionStatus('granted', 'Microphone test successful ✓');
-                    this.updateStatus('Microphone test passed - ready to use!');
-                    
-                    // Stop the test stream
-                    stream.getTracks().forEach(track => track.stop());
-                    
-                    // Update microphone permission state
-                    this.microphonePermission = 'granted';
-                    
-                } catch (error) {
-                    console.error('Microphone test failed:', error);
-                    this.handleMicrophoneError(error);
-                }
-            }
-
-            handleMicrophoneError(error) {
-                let message = 'Microphone access failed: ';
-                let suggestion = '';
-
-                switch (error.name) {
-                    case 'NotAllowedError':
-                        message += 'Permission denied';
-                        suggestion = 'Please click the microphone icon in your browser\'s address bar and allow access, then refresh the page.';
-                        this.updatePermissionStatus('denied', 'Permission denied - check browser settings');
-                        break;
-                    case 'NotFoundError':
-                        message += 'No microphone found';
-                        suggestion = 'Please ensure a microphone is connected to your device.';
-                        break;
-                    case 'NotReadableError':
-                        message += 'Microphone is being used by another application';
-                        suggestion = 'Please close other applications that might be using the microphone.';
-                        break;
-                    case 'OverconstrainedError':
-                        message += 'Microphone constraints not supported';
-                        suggestion = 'Your microphone may not support the required audio format.';
-                        break;
-                    case 'SecurityError':
-                        message += 'Security error';
-                        suggestion = 'Please ensure you\'re using HTTPS or localhost.';
-                        break;
-                    default:
-                        message += error.message || 'Unknown error';
-                        suggestion = 'Please try refreshing the page or check your microphone settings.';
-                }
-
-                this.updateStatus(`${message}. ${suggestion}`);
             }
             
             connect() {
@@ -415,10 +280,7 @@
             }
             
             async toggleListening() {
-                if (!this.isConnected) {
-                    this.updateStatus('Please connect to the server first');
-                    return;
-                }
+                if (!this.isConnected) return;
                 
                 if (this.isListening) {
                     this.stopListening();
@@ -429,15 +291,7 @@
             
             async startListening() {
                 try {
-                    // Clean up any existing stream
-                    if (this.currentStream) {
-                        this.currentStream.getTracks().forEach(track => track.stop());
-                        this.currentStream = null;
-                    }
-
-                    this.updateStatus('Requesting microphone access...');
-                    
-                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                    this.currentStream = await navigator.mediaDevices.getUserMedia({ 
                         audio: {
                             sampleRate: 24000,
                             channelCount: 1,
@@ -446,54 +300,43 @@
                         }
                     });
                     
-                    this.currentStream = stream;
-                    this.microphonePermission = 'granted';
-                    this.updatePermissionStatus('granted', 'Microphone access granted ✓');
-                    
-                    // Close any existing audio context
-                    if (this.audioContext && this.audioContext.state !== 'closed') {
-                        await this.audioContext.close();
-                    }
-                    
-                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-                    
-                    // Handle audio context state
-                    if (this.audioContext.state === 'suspended') {
-                        await this.audioContext.resume();
-                    }
-                    
-                    // Create audio nodes
-                    this.sourceNode = this.audioContext.createMediaStreamSource(stream);
+                    this.audioContext = new AudioContext({ sampleRate: 24000 });
                     this.analyser = this.audioContext.createAnalyser();
                     this.analyser.fftSize = 256;
                     
-                    // Create ScriptProcessor for raw PCM capture
+                    const source = this.audioContext.createMediaStreamSource(this.currentStream);
+                    source.connect(this.analyser);
+                    
+                    // Set up raw PCM capture using ScriptProcessorNode
                     // bufferSize: 4096; inputChannels: 1; outputChannels: 1
                     this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
                     
                     this.processor.onaudioprocess = (e) => {
-                        if (!this.isListening) return;
+                        if (!this.isListening || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                            return;
+                        }
                         
                         const float32 = e.inputBuffer.getChannelData(0);
-                        // Convert Float32Array to Int16Array
+                        
+                        // Convert Float32Array to Int16Array (PCM16)
                         const int16 = new Int16Array(float32.length);
                         for (let i = 0; i < float32.length; i++) {
                             const s = Math.max(-1, Math.min(1, float32[i]));
                             int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
                         }
                         
+                        // Convert to base64
                         const base64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
-                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                            this.ws.send(JSON.stringify({
-                                type: 'input_audio_buffer.append',
-                                audio: base64
-                            }));
-                        }
+                        
+                        // Send to OpenAI Realtime API
+                        this.ws.send(JSON.stringify({
+                            type: 'input_audio_buffer.append',
+                            audio: base64
+                        }));
                     };
                     
-                    // Wire up the audio nodes
-                    this.sourceNode.connect(this.analyser);
-                    this.sourceNode.connect(this.processor);
+                    // Wire up the audio processing chain
+                    source.connect(this.processor);
                     this.processor.connect(this.audioContext.destination);
                     
                     this.setupVolumeIndicator();
@@ -504,49 +347,32 @@
                     this.updateStatus('Listening... Speak now!');
                     
                 } catch (error) {
-                    console.error('Error starting listening:', error);
-                    this.handleMicrophoneError(error);
-                    this.stopListening();
+                    console.error('Error accessing microphone:', error);
+                    this.updateStatus('Microphone access denied');
                 }
             }
             
             stopListening() {
-                try {
-                    this.isListening = false;
-                    
-                    // Disconnect audio nodes
-                    if (this.processor) {
-                        this.processor.disconnect();
-                        this.processor.onaudioprocess = null;
-                        this.processor = null;
-                    }
-                    
-                    if (this.sourceNode) {
-                        this.sourceNode.disconnect();
-                        this.sourceNode = null;
-                    }
-                    
-                    if (this.analyser) {
-                        this.analyser.disconnect();
-                        this.analyser = null;
-                    }
-                    
-                    if (this.currentStream) {
-                        this.currentStream.getTracks().forEach(track => track.stop());
-                        this.currentStream = null;
-                    }
-                    
-                    if (this.audioContext && this.audioContext.state !== 'closed') {
-                        this.audioContext.close();
-                    }
-                    
-                    this.micButton.classList.remove('listening');
-                    this.micIcon.textContent = '🎤';
-                    this.updateStatus('Stopped listening');
-                    this.volumeBar.style.width = '0%';
-                } catch (error) {
-                    console.error('Error stopping listening:', error);
+                if (this.processor) {
+                    this.processor.disconnect();
+                    this.processor = null;
                 }
+                
+                if (this.currentStream) {
+                    this.currentStream.getTracks().forEach(track => track.stop());
+                    this.currentStream = null;
+                }
+                
+                if (this.audioContext && this.audioContext.state !== 'closed') {
+                    this.audioContext.close();
+                    this.audioContext = null;
+                }
+                
+                this.isListening = false;
+                this.micButton.classList.remove('listening');
+                this.micIcon.textContent = '🎤';
+                this.updateStatus('Stopped listening');
+                this.volumeBar.style.width = '0%';
             }
             
             setupVolumeIndicator() {
@@ -557,7 +383,7 @@
                     this.analyser.getByteFrequencyData(dataArray);
                     
                     const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-                    const percentage = Math.min(100, (average / 255) * 100);
+                    const percentage = (average / 255) * 100;
                     
                     this.volumeBar.style.width = `${percentage}%`;
                     
@@ -569,18 +395,6 @@
                 updateVolume();
             }
             
-            convertToPCM16(audioBuffer) {
-                const length = audioBuffer.length;
-                const result = new Int16Array(length);
-                const channelData = audioBuffer.getChannelData(0);
-                
-                for (let i = 0; i < length; i++) {
-                    const sample = Math.max(-1, Math.min(1, channelData[i]));
-                    result[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-                }
-                
-                return result.buffer;
-            }
             
             playAudioDelta(deltaBase64) {
                 try {
@@ -595,9 +409,11 @@
                     const audioBuffer = audioContext.createBuffer(1, audioArray.length / 2, 24000);
                     const channelData = audioBuffer.getChannelData(0);
                     
+                    // Convert Int16 PCM to Float32 for Web Audio
                     for (let i = 0; i < channelData.length; i++) {
                         const sample = (audioArray[i * 2] | (audioArray[i * 2 + 1] << 8));
-                        channelData[i] = sample < 0x8000 ? sample / 0x8000 : (sample - 0x10000) / 0x8000;
+                        // Convert from signed 16-bit to float
+                        channelData[i] = sample >= 0x8000 ? (sample - 0x10000) / 0x8000 : sample / 0x7FFF;
                     }
                     
                     const source = audioContext.createBufferSource();
