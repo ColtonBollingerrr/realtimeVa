@@ -1,523 +1,737 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenAI Realtime Voice Assistant</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-        }
-        
-        .container {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 2rem;
-            text-align: center;
-            max-width: 500px;
-            width: 90%;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-        }
-        
-        h1 {
-            margin-bottom: 2rem;
-            font-size: 2rem;
-            font-weight: 300;
-        }
-        
-        .mic-button {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            border: none;
-            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
-            color: white;
-            font-size: 2rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin: 1rem auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-        }
-        
-        .mic-button:hover {
-            transform: scale(1.05);
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
-        }
-        
-        .mic-button.listening {
-            background: linear-gradient(135deg, #26de81, #20bf6b);
-            animation: pulse 1.5s infinite;
-        }
-        
-        .mic-button.disabled {
-            background: #666;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
-        
-        .status {
-            margin: 1rem 0;
-            padding: 0.5rem;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.1);
-            font-size: 0.9rem;
-        }
-        
-        .transcript {
-            margin: 1rem 0;
-            padding: 1rem;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            min-height: 60px;
-            text-align: left;
-            font-size: 0.9rem;
-            line-height: 1.4;
-        }
-        
-        .transcript h3 {
-            margin-bottom: 0.5rem;
-            color: #ffd700;
-        }
-        
-        .controls {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            margin-top: 1rem;
-        }
-        
-        .btn {
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            cursor: pointer;
-            transition: background 0.3s ease;
-        }
-        
-        .btn:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-        
-        .btn:disabled {
-            background: rgba(255, 255, 255, 0.1);
-            cursor: not-allowed;
-        }
-        
-        .volume-indicator {
-            width: 100%;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 2px;
-            margin: 1rem 0;
-            overflow: hidden;
-        }
-        
-        .volume-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #26de81, #ffd700, #ff6b6b);
-            width: 0%;
-            transition: width 0.1s ease;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🎤 Voice Assistant</h1>
-        
-        <button id="micButton" class="mic-button disabled">
-            <span id="micIcon">🎤</span>
-        </button>
-        
-        <div id="status" class="status">Connecting...</div>
-        
-        <div class="volume-indicator">
-            <div id="volumeBar" class="volume-bar"></div>
-        </div>
-        
-        <div id="transcript" class="transcript">
-            <h3>Conversation</h3>
-            <div id="transcriptContent">Click the microphone to start talking...</div>
-        </div>
-        
-        <div class="controls">
-            <button id="connectBtn" class="btn">Connect</button>
-            <button id="clearBtn" class="btn" disabled>Clear</button>
-        </div>
-    </div>
+  <meta charset="UTF-8" />
+  <title>JumperMedia AI Voice Assistant</title>
+  <style>
+    :root {
+      --size: 160px;          /* diameter of the mic button  */
+      --accent: #4f46e5;      /* indigo‑600                 */
+      --accent-light: #a5b4fc;
+      --danger: #dc2626;      /* red‑600 (for "stop")       */
+      --success: #10b981;     /* green-500 (for connected)  */
+    }
 
-    <script>
-        class RealtimeVoiceAssistant {
-            constructor() {
-                this.ws = null;
-                this.audioContext = null;
-                this.analyser = null;
-                this.processor = null;
-                this.currentStream = null;
-                this.isConnected = false;
-                this.isListening = false;
-                this.isSessionReady = false; // Track if session is fully ready
-                this.audioBuffer = []; // Buffer audio until session is ready
-                this.transcriptContent = [];
-                
-                this.micButton = document.getElementById('micButton');
-                this.micIcon = document.getElementById('micIcon');
-                this.status = document.getElementById('status');
-                this.transcriptDiv = document.getElementById('transcriptContent');
-                this.connectBtn = document.getElementById('connectBtn');
-                this.clearBtn = document.getElementById('clearBtn');
-                this.volumeBar = document.getElementById('volumeBar');
-                
-                this.initializeEventListeners();
-            }
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+      background: radial-gradient(circle at 30% 30%, #eef2ff 0%, #e0e7ff 60%, #c7d2fe 100%);
+      font-family: system-ui, sans-serif;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      margin: 0;
+      color: var(--accent);
+      font-size: 2rem;
+      font-weight: 600;
+    }
+
+    .status {
+      margin: 10px 0;
+      padding: 8px 16px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.8);
+      color: #374151;
+      font-size: 0.9rem;
+      min-width: 200px;
+      text-align: center;
+    }
+
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background 0.3s ease;
+    }
+
+    .btn:hover:not(:disabled) {
+      background: #3730a3;
+    }
+
+    .btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    /* circular button */
+    #micBtn {
+      position: relative;
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      align-items: center;
+      width: var(--size);
+      height: var(--size);
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      cursor: pointer;
+      outline: none;
+      box-shadow: 0 8px 20px rgba(0,0,0,.15);
+      transition: background .25s, transform .25s;
+      margin: 20px 0;
+    }
+    #micBtn:active { transform: scale(.95); }
+    #micBtn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    /* microphone icon (SVG) */
+    #micBtn svg {
+      width: 42%;  /* scales with button */
+      fill: #fff;
+    }
+
+    /* pulsing ring */
+    #micBtn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: var(--accent-light);
+      opacity: 0;
+      transform: scale(.8);
+    }
+
+    /* STATES */
+    #micBtn.connecting::after {
+      animation: pulse .5s infinite cubic-bezier(.66, 0, .34, 1);
+      opacity: .6;
+    }
+    #micBtn.listening::after {
+      animation: pulse 1.4s infinite ease-out;
+      opacity: .35;
+    }
+    #micBtn.speaking::after {
+      animation: ring 1s infinite ease-out;
+      opacity: .25;
+      background: var(--success);
+    }
+    #micBtn.stopped {
+      background: var(--danger);
+    }
+    #micBtn.connected {
+      background: var(--success);
+    }
+
+    @keyframes pulse {
+      0%   { transform: scale(.8); opacity: .6; }
+      100% { transform: scale(1.2); opacity: 0; }
+    }
+    @keyframes ring {
+      0%   { transform: scale(.9); opacity: .25; }
+      100% { transform: scale(1.5); opacity: 0;  }
+    }
+
+    /* Transcript display */
+    .transcript {
+      margin: 20px 0;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 12px;
+      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 600px;
+      max-height: 300px;
+      overflow-y: auto;
+      text-align: left;
+    }
+
+    .transcript h3 {
+      margin: 0 0 15px 0;
+      color: var(--accent);
+      font-size: 1.1rem;
+    }
+
+    .transcript-item {
+      margin: 10px 0;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    .transcript-speaker {
+      font-weight: 600;
+      margin-bottom: 4px;
+      font-size: 0.9rem;
+    }
+
+    .transcript-speaker.user {
+      color: var(--accent);
+    }
+
+    .transcript-speaker.assistant {
+      color: var(--success);
+    }
+
+    .transcript-text {
+      color: #374151;
+      line-height: 1.4;
+    }
+
+    .transcript-time {
+      font-size: 0.75rem;
+      color: #6b7280;
+      margin-left: 8px;
+    }
+
+    /* Data display section */
+    #dataDisplay {
+      margin-top: 20px;
+      background-color: rgba(255, 255, 255, 0.9);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 500px;
+      text-align: left;
+    }
+
+    #dataDisplay h3 {
+      margin: 0 0 15px 0;
+      color: var(--accent);
+      font-size: 1.2rem;
+    }
+
+    #dataDisplay p {
+      margin: 8px 0;
+      color: #374151;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #dataDisplay strong {
+      color: #1f2937;
+      min-width: 120px;
+    }
+
+    #dataDisplay span {
+      flex: 1;
+      text-align: right;
+      color: #4b5563;
+    }
+
+    .empty-transcript {
+      text-align: center;
+      color: #6b7280;
+      font-style: italic;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+      body {
+        padding: 10px;
+      }
+      
+      .header h1 {
+        font-size: 1.5rem;
+      }
+      
+      :root {
+        --size: 120px;
+      }
+      
+      .transcript, #dataDisplay {
+        max-width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <h1>🎤 JumperMedia AI</h1>
+    <div id="status" class="status">Click Connect to start</div>
+  </div>
+
+  <div class="controls">
+    <button id="connectBtn" class="btn">Connect</button>
+    <button id="clearBtn" class="btn" disabled>Clear</button>
+  </div>
+
+  <!-- Mic Button -->
+  <button id="micBtn" class="idle" title="Start / Stop" disabled>
+    <svg fill="#000000" height="200px" width="200px" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+      <g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> 
+        <path d="m439.5,236c0-11.3-9.1-20.4-20.4-20.4s-20.4,9.1-20.4,20.4c0,70-64,126.9-142.7,126.9-78.7,0-142.7-56.9-142.7-126.9 0-11.3-9.1-20.4-20.4-20.4s-20.4,9.1-20.4,20.4c0,86.2 71.5,157.4 163.1,166.7v57.5h-23.6c-11.3,0-20.4,9.1-20.4,20.4 0,11.3 9.1,20.4 20.4,20.4h88c11.3,0 20.4-9.1 20.4-20.4 0-11.3-9.1-20.4-20.4-20.4h-23.6v-57.5c91.6-9.3 163.1-80.5 163.1-166.7z"></path> 
+        <path d="m256,323.5c51,0 92.3-41.3 92.3-92.3v-127.9c0-51-41.3-92.3-92.3-92.3s-92.3,41.3-92.3,92.3v127.9c0,51 41.3,92.3 92.3,92.3zm-52.3-220.2c0-28.8 23.5-52.3 52.3-52.3s52.3,23.5 52.3,52.3v127.9c0,28.8-23.5,52.3-52.3,52.3s-52.3-23.5-52.3-52.3v-127.9z"></path>
+      </g> 
+    </svg>
+  </button>
+
+  <!-- Transcript display -->
+  <div id="transcript" class="transcript">
+    <h3>💬 Conversation</h3>
+    <div id="transcriptContent" class="empty-transcript">
+      Connect and click the microphone to start talking...
+    </div>
+  </div>
+
+  <!-- Display extracted data -->
+  <div id="dataDisplay" style="display: none;">
+    <h3>📋 Project Information</h3>
+    <p><strong>Budget:</strong> <span id="budget">-</span></p>
+    <p><strong>Project Type:</strong> <span id="project_type">-</span></p>
+    <p><strong>Project Name:</strong> <span id="project_name">-</span></p>
+    <p><strong>Video Purpose:</strong> <span id="video_purpose">-</span></p>
+    <p><strong>Deliverables:</strong> <span id="deliverables">-</span></p>
+    <p><strong>Vibe:</strong> <span id="vibe">-</span></p>
+    <p><strong>Footage Info:</strong> <span id="footage_info">-</span></p>
+    <p><strong>Description:</strong> <span id="description">-</span></p>
+    <p><strong>Language:</strong> <span id="language">-</span></p>
+    <p><strong>Date:</strong> <span id="date">-</span></p>
+    <p><strong>Rush Fee:</strong> <span id="rush_fee">-</span></p>
+  </div>
+
+  <script>
+    class RealtimeVoiceAssistant {
+      constructor() {
+        this.ws = null;
+        this.audioContext = null;
+        this.analyser = null;
+        this.processor = null;
+        this.currentStream = null;
+        this.isConnected = false;
+        this.isListening = false;
+        this.isSessionReady = false;
+        this.audioBuffer = [];
+        this.transcriptContent = [];
+        
+        // Playback management
+        this.nextPlayTime = 0;
+        this.scheduledSources = [];
+        this.speaking = false;
+        
+        this.micBtn = document.getElementById('micBtn');
+        this.status = document.getElementById('status');
+        this.transcriptDiv = document.getElementById('transcriptContent');
+        this.connectBtn = document.getElementById('connectBtn');
+        this.clearBtn = document.getElementById('clearBtn');
+        this.dataDisplay = document.getElementById('dataDisplay');
+        
+        this.initializeEventListeners();
+      }
+      
+      initializeEventListeners() {
+        this.micBtn.onclick = () => this.toggleListening();
+        this.connectBtn.addEventListener('click', () => this.connect());
+        this.clearBtn.addEventListener('click', () => this.clearTranscript());
+      }
+      
+      setState(state) {
+        this.micBtn.className = state;
+        
+        // Update status based on state
+        switch(state) {
+          case 'connecting':
+            this.updateStatus('Connecting to OpenAI...');
+            break;
+          case 'connected':
+            this.updateStatus('Connected! Click microphone to start.');
+            break;
+          case 'listening':
+            this.updateStatus('🎤 Listening... Speak now!');
+            break;
+          case 'speaking':
+            this.updateStatus('🔊 AI is responding...');
+            break;
+          case 'stopped':
+            this.updateStatus('Stopped listening');
+            break;
+        }
+      }
+      
+      connect() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+        
+        this.setState('connecting');
+        this.ws = new WebSocket(wsUrl);
+        
+        this.ws.onopen = () => {
+          console.log('Connected to server');
+          this.ws.send(JSON.stringify({ type: 'connect' }));
+        };
+        
+        this.ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          this.handleServerMessage(data);
+        };
+        
+        this.ws.onclose = () => {
+          console.log('Disconnected from server');
+          this.updateStatus('Disconnected from server');
+          this.isConnected = false;
+          this.isSessionReady = false;
+          this.audioBuffer = [];
+          this.setState('stopped');
+          this.micBtn.disabled = true;
+          this.connectBtn.disabled = false;
+          this.clearBtn.disabled = true;
+          
+          if (this.isListening) {
+            this.stopListening();
+          }
+        };
+        
+        this.ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          this.updateStatus('Connection error');
+        };
+      }
+      
+      handleServerMessage(data) {
+        switch (data.type) {
+          case 'connected':
+            this.isConnected = true;
+            this.setState('connected');
+            this.micBtn.disabled = false;
+            this.clearBtn.disabled = false;
+            this.connectBtn.disabled = true;
+            break;
             
-            initializeEventListeners() {
-                this.micButton.addEventListener('click', () => this.toggleListening());
-                this.connectBtn.addEventListener('click', () => this.connect());
-                this.clearBtn.addEventListener('click', () => this.clearTranscript());
-            }
+          case 'session.updated':
+            console.log('Session updated - ready for audio');
+            this.isSessionReady = true;
             
-            connect() {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}`;
-                
-                this.ws = new WebSocket(wsUrl);
-                
-                this.ws.onopen = () => {
-                    console.log('Connected to server');
-                    this.updateStatus('Connected to server. Initializing...');
-                    this.ws.send(JSON.stringify({ type: 'connect' }));
-                };
-                
-                this.ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    this.handleServerMessage(data);
-                };
-                
-                this.ws.onclose = () => {
-                    console.log('Disconnected from server');
-                    this.updateStatus('Disconnected from server');
-                    this.isConnected = false;
-                    this.isSessionReady = false;
-                    this.audioBuffer = [];
-                    this.micButton.classList.add('disabled');
-                    this.connectBtn.disabled = false;
-                    this.clearBtn.disabled = true;
-                    
-                    // Stop listening if we were
-                    if (this.isListening) {
-                        this.stopListening();
-                    }
-                };
-                
-                this.ws.onerror = (error) => {
-                    console.error('WebSocket error:', error);
-                    this.updateStatus('Connection error');
-                };
-            }
-            
-            handleServerMessage(data) {
-                switch (data.type) {
-                    case 'connected':
-                        this.isConnected = true;
-                        this.updateStatus('Ready! Click the microphone to start.');
-                        this.micButton.classList.remove('disabled');
-                        this.clearBtn.disabled = false;
-                        this.connectBtn.disabled = true;
-                        break;
-                        
-                    case 'conversation.item.input_audio_transcription.completed':
-                        if (data.transcript) {
-                            this.addToTranscript('You', data.transcript);
-                        }
-                        break;
-                        
-                    case 'response.audio_transcript.delta':
-                        this.updateAssistantResponse(data.delta);
-                        break;
-                        
-                    case 'response.audio_transcript.done':
-                        this.finalizeAssistantResponse(data.transcript);
-                        break;
-                        
-                    case 'response.audio.delta':
-                        if (data.delta) {
-                            this.playAudioDelta(data.delta);
-                        }
-                        break;
-                        
-                    case 'input_audio_buffer.speech_started':
-                        this.updateStatus('Listening... (speech detected)');
-                        break;
-                        
-                    case 'input_audio_buffer.speech_stopped':
-                        this.updateStatus('Processing...');
-                        break;
-                        
-                    case 'error':
-                        console.error('Server error:', data.message);
-                        this.updateStatus(`Error: ${data.message}`);
-                        break;
-                        
-                    case 'disconnected':
-                        this.updateStatus(`OpenAI connection lost: ${data.message || 'Unknown reason'}`);
-                        if (data.code) {
-                            console.log('Disconnect code:', data.code, 'Reason:', data.reason);
-                        }
-                        this.isConnected = false;
-                        this.micButton.classList.add('disabled');
-                        this.connectBtn.disabled = false;
-                        break;
+            if (this.audioBuffer.length > 0) {
+              console.log(`Sending ${this.audioBuffer.length} buffered audio chunks`);
+              this.audioBuffer.forEach(audioData => {
+                if (this.ws.readyState === WebSocket.OPEN) {
+                  this.ws.send(JSON.stringify({
+                    type: 'input_audio_buffer.append',
+                    audio: audioData
+                  }));
                 }
+              });
+              this.audioBuffer = [];
+            }
+            break;
+            
+          case 'conversation.item.input_audio_transcription.completed':
+            if (data.transcript) {
+              this.addToTranscript('You', data.transcript);
+            }
+            break;
+            
+          case 'response.audio_transcript.delta':
+            this.updateAssistantResponse(data.delta);
+            break;
+            
+          case 'response.audio_transcript.done':
+            this.finalizeAssistantResponse(data.transcript);
+            break;
+            
+          case 'response.audio.delta':
+            if (data.delta) {
+              this.playAudioDelta(data.delta);
+            }
+            break;
+            
+          case 'input_audio_buffer.speech_started':
+            this.updateStatus('🎤 Listening... (speech detected)');
+            break;
+            
+          case 'input_audio_buffer.speech_stopped':
+            this.updateStatus('Processing...');
+            break;
+            
+          case 'error':
+            console.error('Server error:', data.message);
+            this.updateStatus(`Error: ${data.message}`);
+            break;
+            
+          case 'disconnected':
+            this.updateStatus(`OpenAI connection lost: ${data.message || 'Unknown reason'}`);
+            if (data.code) {
+              console.log('Disconnect code:', data.code, 'Reason:', data.reason);
+            }
+            this.isConnected = false;
+            this.micBtn.disabled = true;
+            this.connectBtn.disabled = false;
+            break;
+            
+          // Handle data extraction (if your backend sends this)
+          case 'data':
+            this.updateDataDisplay(data.data);
+            break;
+        }
+      }
+      
+      async toggleListening() {
+        if (!this.isConnected) return;
+        
+        if (this.isListening) {
+          this.stopListening();
+        } else {
+          await this.startListening();
+        }
+      }
+      
+      async startListening() {
+        try {
+          this.currentStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              sampleRate: 24000,
+              channelCount: 1,
+              echoCancellation: true,
+              noiseSuppression: true
+            }
+          });
+          
+          this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+          this.nextPlayTime = this.audioContext.currentTime;
+          
+          const source = this.audioContext.createMediaStreamSource(this.currentStream);
+          this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+          
+          this.processor.onaudioprocess = (e) => {
+            if (!this.isListening || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+              return;
             }
             
-            async toggleListening() {
-                if (!this.isConnected) return;
-                
-                if (this.isListening) {
-                    this.stopListening();
-                } else {
-                    await this.startListening();
-                }
+            const float32 = e.inputBuffer.getChannelData(0);
+            
+            // Convert Float32Array to Int16Array (PCM16)
+            const int16 = new Int16Array(float32.length);
+            for (let i = 0; i < float32.length; i++) {
+              const s = Math.max(-1, Math.min(1, float32[i]));
+              int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
             
-            async startListening() {
-                try {
-                    this.currentStream = await navigator.mediaDevices.getUserMedia({ 
-                        audio: {
-                            sampleRate: 24000,
-                            channelCount: 1,
-                            echoCancellation: true,
-                            noiseSuppression: true
-                        }
-                    });
-                    
-                    this.audioContext = new AudioContext({ sampleRate: 24000 });
-                    this.analyser = this.audioContext.createAnalyser();
-                    this.analyser.fftSize = 256;
-                    
-                    const source = this.audioContext.createMediaStreamSource(this.currentStream);
-                    source.connect(this.analyser);
-                    
-                    // Set up raw PCM capture using ScriptProcessorNode
-                    // bufferSize: 4096; inputChannels: 1; outputChannels: 1
-                    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-                    
-                    this.processor.onaudioprocess = (e) => {
-                        if (!this.isListening || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-                            return;
-                        }
-                        
-                        const float32 = e.inputBuffer.getChannelData(0);
-                        
-                        // Convert Float32Array to Int16Array (PCM16)
-                        const int16 = new Int16Array(float32.length);
-                        for (let i = 0; i < float32.length; i++) {
-                            const s = Math.max(-1, Math.min(1, float32[i]));
-                            int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                        }
-                        
-                        // Convert to base64
-                        const base64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
-                        
-                        // Buffer audio until session is ready, then send immediately
-                        if (this.isSessionReady) {
-                            this.ws.send(JSON.stringify({
-                                type: 'input_audio_buffer.append',
-                                audio: base64
-                            }));
-                        } else {
-                            // Buffer the audio until session is ready
-                            this.audioBuffer.push(base64);
-                            if (this.audioBuffer.length > 50) { // Limit buffer size
-                                this.audioBuffer.shift(); // Remove oldest chunk
-                            }
-                        }
-                    };
-                    
-                    // Wire up the audio processing chain
-                    source.connect(this.processor);
-                    this.processor.connect(this.audioContext.destination);
-                    
-                    this.setupVolumeIndicator();
-                    
-                    this.isListening = true;
-                    this.micButton.classList.add('listening');
-                    this.micIcon.textContent = '🔴';
-                    this.updateStatus('Listening... Speak now!');
-                    
-                } catch (error) {
-                    console.error('Error accessing microphone:', error);
-                    this.updateStatus('Microphone access denied');
-                }
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
+            
+            if (this.isSessionReady) {
+              this.ws.send(JSON.stringify({
+                type: 'input_audio_buffer.append',
+                audio: base64
+              }));
+            } else {
+              this.audioBuffer.push(base64);
+              if (this.audioBuffer.length > 50) {
+                this.audioBuffer.shift();
+              }
             }
             
-            stopListening() {
-                if (this.processor) {
-                    this.processor.disconnect();
-                    this.processor = null;
-                }
-                
-                if (this.currentStream) {
-                    this.currentStream.getTracks().forEach(track => track.stop());
-                    this.currentStream = null;
-                }
-                
-                if (this.audioContext && this.audioContext.state !== 'closed') {
-                    this.audioContext.close();
-                    this.audioContext = null;
-                }
-                
-                this.isListening = false;
-                this.micButton.classList.remove('listening');
-                this.micIcon.textContent = '🎤';
-                this.updateStatus('Stopped listening');
-                this.volumeBar.style.width = '0%';
-            }
-            
-            setupVolumeIndicator() {
-                const updateVolume = () => {
-                    if (!this.analyser || !this.isListening) return;
-                    
-                    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-                    this.analyser.getByteFrequencyData(dataArray);
-                    
-                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-                    const percentage = (average / 255) * 100;
-                    
-                    this.volumeBar.style.width = `${percentage}%`;
-                    
-                    if (this.isListening) {
-                        requestAnimationFrame(updateVolume);
-                    }
-                };
-                
-                updateVolume();
-            }
-            
-            
-            playAudioDelta(deltaBase64) {
-                try {
-                    const audioData = atob(deltaBase64);
-                    const audioArray = new Uint8Array(audioData.length);
-                    for (let i = 0; i < audioData.length; i++) {
-                        audioArray[i] = audioData.charCodeAt(i);
-                    }
-                    
-                    // Convert PCM16 to AudioBuffer and play
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    const audioBuffer = audioContext.createBuffer(1, audioArray.length / 2, 24000);
-                    const channelData = audioBuffer.getChannelData(0);
-                    
-                    // Convert Int16 PCM to Float32 for Web Audio
-                    for (let i = 0; i < channelData.length; i++) {
-                        const sample = (audioArray[i * 2] | (audioArray[i * 2 + 1] << 8));
-                        // Convert from signed 16-bit to float
-                        channelData[i] = sample >= 0x8000 ? (sample - 0x10000) / 0x8000 : sample / 0x7FFF;
-                    }
-                    
-                    const source = audioContext.createBufferSource();
-                    source.buffer = audioBuffer;
-                    source.connect(audioContext.destination);
-                    source.start();
-                    
-                } catch (error) {
-                    console.error('Error playing audio:', error);
-                }
-            }
-            
-            addToTranscript(speaker, text) {
-                this.transcriptContent.push({ speaker, text, timestamp: new Date() });
-                this.updateTranscriptDisplay();
-            }
-            
-            updateAssistantResponse(delta) {
-                if (this.transcriptContent.length > 0) {
-                    const lastItem = this.transcriptContent[this.transcriptContent.length - 1];
-                    if (lastItem.speaker === 'Assistant' && !lastItem.final) {
-                        lastItem.text += delta;
-                    } else {
-                        this.transcriptContent.push({ 
-                            speaker: 'Assistant', 
-                            text: delta, 
-                            timestamp: new Date(),
-                            final: false 
-                        });
-                    }
-                } else {
-                    this.transcriptContent.push({ 
-                        speaker: 'Assistant', 
-                        text: delta, 
-                        timestamp: new Date(),
-                        final: false 
-                    });
-                }
-                this.updateTranscriptDisplay();
-            }
-            
-            finalizeAssistantResponse(fullText) {
-                if (this.transcriptContent.length > 0) {
-                    const lastItem = this.transcriptContent[this.transcriptContent.length - 1];
-                    if (lastItem.speaker === 'Assistant') {
-                        lastItem.text = fullText;
-                        lastItem.final = true;
-                    }
-                }
-                this.updateTranscriptDisplay();
-            }
-            
-            updateTranscriptDisplay() {
-                const content = this.transcriptContent.map(item => {
-                    const time = item.timestamp.toLocaleTimeString();
-                    return `<div style="margin-bottom: 10px;">
-                        <strong style="color: ${item.speaker === 'You' ? '#ffd700' : '#26de81'};">
-                            ${item.speaker} (${time}):
-                        </strong><br>
-                        ${item.text}
-                    </div>`;
-                }).join('');
-                
-                this.transcriptDiv.innerHTML = content || 'Click the microphone to start talking...';
-                this.transcriptDiv.scrollTop = this.transcriptDiv.scrollHeight;
-            }
-            
-            clearTranscript() {
-                this.transcriptContent = [];
-                this.updateTranscriptDisplay();
-            }
-            
-            updateStatus(message) {
-                this.status.textContent = message;
-            }
+            // Detect speech for visual feedback
+            this.detectSpeech(float32);
+          };
+          
+          source.connect(this.processor);
+          this.processor.connect(this.audioContext.destination);
+          
+          this.isListening = true;
+          this.setState('listening');
+          
+        } catch (error) {
+          console.error('Error accessing microphone:', error);
+          this.updateStatus('Microphone access denied');
+        }
+      }
+      
+      stopListening() {
+        if (this.processor) {
+          this.processor.disconnect();
+          this.processor = null;
         }
         
-        // Initialize the voice assistant when the page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            new RealtimeVoiceAssistant();
-        });
-    </script>
+        if (this.currentStream) {
+          this.currentStream.getTracks().forEach(track => track.stop());
+          this.currentStream = null;
+        }
+        
+        if (this.audioContext && this.audioContext.state !== 'closed') {
+          this.audioContext.close();
+          this.audioContext = null;
+        }
+        
+        this.isListening = false;
+        this.setState('connected');
+      }
+      
+      detectSpeech(buffer) {
+        let sum = 0;
+        for (let v of buffer) sum += v * v;
+        const rms = Math.sqrt(sum / buffer.length);
+        
+        if (rms > 0.02 && !this.speaking) {
+          this.speaking = true;
+        } else if (rms < 0.01 && this.speaking) {
+          this.speaking = false;
+        }
+      }
+      
+      playAudioDelta(deltaBase64) {
+        try {
+          this.setState('speaking');
+          
+          const pcmBuf = this.base64ToArrayBuffer(deltaBase64);
+          const int16 = new Int16Array(pcmBuf);
+          const float32 = new Float32Array(int16.length);
+          
+          for (let i = 0; i < int16.length; i++) {
+            float32[i] = int16[i] / 0x7FFF;
+          }
+          
+          if (!this.audioContext || this.audioContext.state === 'closed') {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            this.nextPlayTime = this.audioContext.currentTime;
+          }
+          
+          const buffer = this.audioContext.createBuffer(1, float32.length, 24000);
+          buffer.getChannelData(0).set(float32);
+          const src = this.audioContext.createBufferSource();
+          src.buffer = buffer;
+          src.connect(this.audioContext.destination);
+          
+          if (this.nextPlayTime < this.audioContext.currentTime) {
+            this.nextPlayTime = this.audioContext.currentTime + 0.05;
+          }
+          
+          src.start(this.nextPlayTime);
+          this.scheduledSources.push(src);
+          this.nextPlayTime += buffer.duration;
+          
+          src.onended = () => {
+            if (this.scheduledSources[0] === src) this.scheduledSources.shift();
+            if (this.scheduledSources.length === 0) {
+              this.setState(this.isListening ? 'listening' : 'connected');
+            }
+          };
+          
+        } catch (error) {
+          console.error('Error playing audio:', error);
+        }
+      }
+      
+      base64ToArrayBuffer(b64) {
+        const bin = atob(b64);
+        const len = bin.length;
+        const buf = new ArrayBuffer(len);
+        const view = new Uint8Array(buf);
+        for (let i = 0; i < len; i++) view[i] = bin.charCodeAt(i);
+        return buf;
+      }
+      
+      addToTranscript(speaker, text) {
+        this.transcriptContent.push({ speaker, text, timestamp: new Date() });
+        this.updateTranscriptDisplay();
+      }
+      
+      updateAssistantResponse(delta) {
+        if (this.transcriptContent.length > 0) {
+          const lastItem = this.transcriptContent[this.transcriptContent.length - 1];
+          if (lastItem.speaker === 'Assistant' && !lastItem.final) {
+            lastItem.text += delta;
+          } else {
+            this.transcriptContent.push({ 
+              speaker: 'Assistant', 
+              text: delta, 
+              timestamp: new Date(),
+              final: false 
+            });
+          }
+        } else {
+          this.transcriptContent.push({ 
+            speaker: 'Assistant', 
+            text: delta, 
+            timestamp: new Date(),
+            final: false 
+          });
+        }
+        this.updateTranscriptDisplay();
+      }
+      
+      finalizeAssistantResponse(fullText) {
+        if (this.transcriptContent.length > 0) {
+          const lastItem = this.transcriptContent[this.transcriptContent.length - 1];
+          if (lastItem.speaker === 'Assistant') {
+            lastItem.text = fullText;
+            lastItem.final = true;
+          }
+        }
+        this.updateTranscriptDisplay();
+      }
+      
+      updateTranscriptDisplay() {
+        if (this.transcriptContent.length === 0) {
+          this.transcriptDiv.innerHTML = '<div class="empty-transcript">Connect and click the microphone to start talking...</div>';
+          return;
+        }
+        
+        const content = this.transcriptContent.map(item => {
+          const time = item.timestamp.toLocaleTimeString();
+          const speakerClass = item.speaker === 'You' ? 'user' : 'assistant';
+          return `
+            <div class="transcript-item">
+              <div class="transcript-speaker ${speakerClass}">
+                ${item.speaker === 'You' ? '👤' : '🤖'} ${item.speaker}
+                <span class="transcript-time">${time}</span>
+              </div>
+              <div class="transcript-text">${item.text}</div>
+            </div>
+          `;
+        }).join('');
+        
+        this.transcriptDiv.innerHTML = content;
+        this.transcriptDiv.scrollTop = this.transcriptDiv.scrollHeight;
+      }
+      
+      updateDataDisplay(data) {
+        document.getElementById('budget').textContent = data.budget || '-';
+        document.getElementById('project_type').textContent = data.project_type || '-';
+        document.getElementById('project_name').textContent = data.project_name || '-';
+        document.getElementById('video_purpose').textContent = data.video_purpose || '-';
+        document.getElementById('deliverables').textContent = data.deliverables || '-';
+        document.getElementById('vibe').textContent = data.vibe || '-';
+        document.getElementById('footage_info').textContent = data.footage_info || '-';
+        document.getElementById('description').textContent = data.description || '-';
+        document.getElementById('language').textContent = data.language || '-';
+        document.getElementById('date').textContent = data.date || '-';
+        document.getElementById('rush_fee').textContent = data.rush_fee || '-';
+        
+        this.dataDisplay.style.display = 'block';
+      }
+      
+      clearTranscript() {
+        this.transcriptContent = [];
+        this.updateTranscriptDisplay();
+        this.dataDisplay.style.display = 'none';
+      }
+      
+      updateStatus(message) {
+        this.status.textContent = message;
+      }
+    }
+    
+    // Initialize the voice assistant when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      new RealtimeVoiceAssistant();
+    });
+  </script>
 </body>
 </html>
