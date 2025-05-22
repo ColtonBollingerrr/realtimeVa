@@ -290,8 +290,21 @@
             
             async startListening() {
                 try {
+                    // List all available media devices
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const audioDevices = devices.filter(device => device.kind === 'audioinput');
+                    
+                    // Check if there are available audio devices
+                    if (audioDevices.length === 0) {
+                        throw new Error('No microphone found');
+                    }
+            
+                    // Select the first available audio device (or allow user to choose)
+                    const selectedDevice = audioDevices[0].deviceId;
+                    
                     const stream = await navigator.mediaDevices.getUserMedia({ 
                         audio: {
+                            deviceId: selectedDevice, // Specify the deviceId
                             sampleRate: 24000,
                             channelCount: 1,
                             echoCancellation: true,
@@ -327,7 +340,7 @@
                     
                 } catch (error) {
                     console.error('Error accessing microphone:', error);
-                    this.updateStatus('Microphone access denied');
+                    this.updateStatus('Microphone access denied or no device found. Please ensure a microphone is connected and accessible.');
                 }
             }
             
