@@ -188,7 +188,9 @@ class VoiceAssistant {
     async playAudio(base64Audio) {
         try {
             const arrayBuffer = this.base64ToArrayBuffer(base64Audio);
-            const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+            
+            // Convert PCM16 to AudioBuffer
+            const audioBuffer = await this.pcm16ToAudioBuffer(arrayBuffer);
             
             const source = this.audioContext.createBufferSource();
             source.buffer = audioBuffer;
@@ -206,6 +208,27 @@ class VoiceAssistant {
             this.isPlaying = false;
             this.playNextAudio();
         }
+    }
+
+    async pcm16ToAudioBuffer(arrayBuffer) {
+        const pcm16Array = new Int16Array(arrayBuffer);
+        const sampleRate = 24000; // OpenAI uses 24kHz
+        const numberOfChannels = 1; // Mono
+        
+        const audioBuffer = this.audioContext.createBuffer(
+            numberOfChannels,
+            pcm16Array.length,
+            sampleRate
+        );
+        
+        const channelData = audioBuffer.getChannelData(0);
+        
+        // Convert Int16 to Float32
+        for (let i = 0; i < pcm16Array.length; i++) {
+            channelData[i] = pcm16Array[i] / 32768;
+        }
+        
+        return audioBuffer;
     }
 
     playNextAudio() {
@@ -353,6 +376,8 @@ class VoiceAssistant {
     }
 
     handleOpenAIMessage(data) {
+        console.log('OpenAI message:', data.type, data);
+        
         switch (data.type) {
             case 'conversation.item.input_audio_transcription.completed':
                 if (data.transcript) {
@@ -369,6 +394,12 @@ class VoiceAssistant {
                 }
                 break;
 
+            case 'response.audio_transcript.delta':
+                if (data.delta) {
+                    this.updateAssistantResponse(data.delta);
+                }
+                break;
+
             case 'response.text.delta':
                 if (data.delta) {
                     this.updateAssistantResponse(data.delta);
@@ -379,8 +410,45 @@ class VoiceAssistant {
                 this.finalizeAssistantResponse();
                 break;
 
+            // Handle conversation item created (contains assistant response)
+            case 'conversation.item.created':
+                if (data.item && data.item.role === 'assistant') {
+                    if (data.item.content) {
+                        data.item.content.forEach(content => {
+                            if (content.type === 'text' && content.text) {
+                                this.addTranscript('assistant', content.text);
+                            } else if (content.type === 'audio' && content.audio) {
+                                this.audioQueue.push(content.audio);
+                                if (!this.isPlaying) {
+                                    this.playNextAudio();
+                                }
+                            }
+                        });
+                    }
+                }
+                break;
+
+            // Handle function call outputs
+            case 'response.output_item.added':
+                if (data.item && data.item.type === 'message') {
+                    if (data.item.content) {
+                        data.item.content.forEach(content => {
+                            if (content.type === 'text' && content.text) {
+                                this.addTranscript('assistant', content.text);
+                            } else if (content.type === 'audio' && content.audio) {
+                                this.audioQueue.push(content.audio);
+                                if (!this.isPlaying) {
+                                    this.playNextAudio();
+                                }
+                            }
+                        });
+                    }
+                }
+                break;
+
             case 'error':
                 this.showError(`OpenAI Error: ${data.error?.message || 'Unknown error'}`);
+                console.error('OpenAI error:', data);
                 break;
 
             case 'session.created':
@@ -391,8 +459,16 @@ class VoiceAssistant {
                 console.log('OpenAI session updated:', data);
                 break;
 
+            case 'response.created':
+                console.log('Response created:', data);
+                break;
+
+            case 'rate_limits.updated':
+                console.log('Rate limits updated:', data);
+                break;
+
             default:
-                console.log('Unhandled OpenAI message:', data);
+                console.log('Unhandled OpenAI message:', data.type, data);
         }
     }
 
