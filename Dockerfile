@@ -20,7 +20,7 @@ COPY . .
 RUN mkdir -p uploads
 
 # Expose port
-EXPOSE 8080
+EXPOSE 3000
 
 # Set environment variables
 ENV NODE_ENV=production
