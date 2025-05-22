@@ -53,15 +53,6 @@ wss.on('connection', (ws) => {
     openaiWs.on('open', () => {
       console.log('Connected to OpenAI Realtime API');
       
-      // Set up ping interval to keep connection alive
-      pingInterval = setInterval(() => {
-        if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
-          // Send a ping message to keep connection alive
-          openaiWs.ping();
-          console.log('Sent ping to OpenAI');
-        }
-      }, 30000); // Ping every 30 seconds
-      
       // Configure the session
       const sessionConfig = {
         type: 'session.update',
@@ -104,10 +95,27 @@ wss.on('connection', (ws) => {
           console.error('OpenAI API Error:', JSON.stringify(message, null, 2));
         }
         
+        // Start ping only after session is ready and we get a response.done
+        if (message.type === 'response.done' && !pingInterval) {
+          console.log('First response completed, starting keep-alive pings');
+          pingInterval = setInterval(() => {
+            if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+              openaiWs.ping();
+              console.log('Sent ping to OpenAI');
+            }
+          }, 30000); // Ping every 30 seconds
+        }
+        
         // Forward relevant messages to client
         switch (message.type) {
           case 'session.created':
+            console.log('Session created successfully');
+            ws.send(JSON.stringify(message));
+            break;
           case 'session.updated':
+            console.log('Session updated successfully - connection is ready');
+            ws.send(JSON.stringify(message));
+            break;
           case 'conversation.item.created':
           case 'conversation.item.truncated':
           case 'conversation.item.deleted':
