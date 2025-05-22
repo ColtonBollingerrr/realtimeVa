@@ -1,7 +1,7 @@
 {
-  "name": "openai-realtime-voice-assistant",
+  "name": "realtime-voice-assistant",
   "version": "1.0.0",
-  "description": "OpenAI Realtime API Voice Assistant for Google Cloud Run",
+  "description": "Real-time voice assistant using OpenAI GPT-4o real-time API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,20 +9,21 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "ws": "^8.14.2"
+    "ws": "^8.14.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  },
   "keywords": [
+    "voice-assistant",
     "openai",
-    "realtime",
-    "voice",
-    "assistant",
-    "websocket"
+    "real-time",
+    "websocket",
+    "gpt-4o"
   ],
   "author": "",
   "license": "MIT"
