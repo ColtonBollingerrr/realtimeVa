@@ -273,8 +273,13 @@
                         break;
                         
                     case 'disconnected':
-                        this.updateStatus('OpenAI connection lost');
+                        this.updateStatus(`OpenAI connection lost: ${data.message || 'Unknown reason'}`);
+                        if (data.code) {
+                            console.log('Disconnect code:', data.code, 'Reason:', data.reason);
+                        }
                         this.isConnected = false;
+                        this.micButton.classList.add('disabled');
+                        this.connectBtn.disabled = false;
                         break;
                 }
             }
