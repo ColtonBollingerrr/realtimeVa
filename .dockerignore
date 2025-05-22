@@ -6,6 +6,11 @@ README.md
 .env
 .nyc_output
 coverage
-.nyc_output
-.coverage
-.coverage/
+.dockerignore
+Dockerfile
+docker-compose.yml
+.vscode
+.idea
+*.log
+uploads/*
+!uploads/.gitkeep
